@@ -307,6 +307,7 @@ def test_compact_tool_fan_uses_shell_local_anchor_not_fixed_viewport_position():
 
     assert "position: absolute;" in fan_block
     assert "--compact-tool-wheel-hover-radius: 116px;" in fan_block
+    assert "--compact-tool-wheel-orbit-radius: 80px;" in fan_block
     assert "--compact-tool-fan-focus-x: var(--compact-tool-wheel-hover-radius);" in fan_block
     assert "--compact-tool-fan-focus-y: var(--compact-tool-wheel-hover-radius);" in fan_block
     assert "--compact-tool-wheel-center-x: var(--compact-tool-wheel-hover-radius);" in fan_block
@@ -353,10 +354,10 @@ def test_compact_tool_fan_uses_shell_local_anchor_not_fixed_viewport_position():
     assert '.compact-input-tool-item[data-compact-tool-wheel-slot="hidden"]' in styles
     assert '.compact-input-tool-item[data-compact-tool-wheel-slot="hidden-forward"]' in styles
     assert '.compact-input-tool-item[data-compact-tool-wheel-slot="hidden-backward"]' in styles
-    assert "rotate(107.35deg) translateX(91.92px) rotate(-107.35deg)" in styles
-    assert "rotate(-17.35deg) translateX(91.92px) rotate(17.35deg)" in styles
-    assert "rotate(-48.51deg) translateX(91.92px) rotate(48.51deg)" in styles
-    assert "rotate(138.51deg) translateX(91.92px) rotate(-138.51deg)" in styles
+    assert "rotate(107.35deg) translateX(var(--compact-tool-wheel-orbit-radius)) rotate(-107.35deg)" in styles
+    assert "rotate(-17.35deg) translateX(var(--compact-tool-wheel-orbit-radius)) rotate(17.35deg)" in styles
+    assert "rotate(-48.51deg) translateX(var(--compact-tool-wheel-orbit-radius)) rotate(48.51deg)" in styles
+    assert "rotate(138.51deg) translateX(var(--compact-tool-wheel-orbit-radius)) rotate(-138.51deg)" in styles
     assert "translateX(83.82px)" not in wheel_block
     assert "translateX(89.74px)" not in wheel_block
     assert "translateX(92.06px)" not in wheel_block
@@ -776,6 +777,14 @@ def test_compact_history_hit_contract_keeps_transparent_wrappers_out_of_hit_regi
         'className="compact-export-history-scroll-content"',
         1,
     )[0]
+    message_hit_block = panel_source.split('className="compact-export-history-bubble"', 1)[1].split(
+        'compact-export-history-check',
+        1,
+    )[0]
+    controls_hit_block = panel_source.split('className="compact-export-history-controls"', 1)[1].split(
+        'compact-export-history-controls-content',
+        1,
+    )[0]
 
     assert "pointer-events: none;" in anchor_block
     assert "pointer-events: none;" in panel_block
@@ -789,8 +798,12 @@ def test_compact_history_hit_contract_keeps_transparent_wrappers_out_of_hit_regi
     assert "function getCompactHistoryScrollbarRect(element, parentRect)" in script
     assert "id: 'history:scrollbar'" in script
     assert "data-compact-hit-region" not in scroll_jsx_block
-    assert 'data-compact-hit-region-id={`history:message:${message.id}`}' in panel_source
-    assert 'data-compact-hit-region-id="history:controls"' in panel_source
+    assert 'data-compact-hit-region-id={historyInteractive ? `history:message:${message.id}` : undefined}' in panel_source
+    assert "data-compact-hit-region={historyInteractive ? 'true' : undefined}" in message_hit_block
+    assert "data-compact-hit-region-kind={historyInteractive ? 'message' : undefined}" in message_hit_block
+    assert "data-compact-hit-region-id={historyInteractive ? 'history:controls' : undefined}" in panel_source
+    assert "data-compact-hit-region={historyInteractive ? 'true' : undefined}" in controls_hit_block
+    assert "data-compact-hit-region-kind={historyInteractive ? 'controls' : undefined}" in controls_hit_block
     assert 'data-compact-hit-region-id="history:preview"' in panel_source
 
 
