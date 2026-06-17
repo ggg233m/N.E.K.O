@@ -32,6 +32,36 @@ def _read_static_locale(locale_name: str) -> dict:
     return json.loads((STATIC_LOCALES_DIR / f"{locale_name}.json").read_text(encoding="utf-8"))
 
 
+def _extract_deep_freeze_registration_block(source: str) -> str:
+    marker = "registerGuide(deepFreeze("
+    start = source.index(marker) + len(marker)
+    assert source[start] == "{"
+    depth = 0
+    quote = None
+    escaped = False
+    for index in range(start, len(source)):
+        char = source[index]
+        if quote:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            continue
+        if char == "{":
+            depth += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    raise AssertionError("registerGuide(deepFreeze(...)) block was not closed")
+
+
 def _function_block(source: str, name: str, next_name: str) -> str:
     return source.split(f"        {name}() {{", 1)[1].split(f"        {next_name}(", 1)[0]
 
@@ -294,3 +324,12 @@ def test_zh_cn_intro_basic_copy_matches_step_fallback_and_voice_script():
     assert static_intro == fallback_text
     assert not fallback_text.endswith("喵！")
     assert fallback_text.endswith("啦！")
+
+
+def test_day1_audio_files_by_key_preserves_locale_override_map():
+    day1_source = _read_day1_guide()
+    registration_block = _extract_deep_freeze_registration_block(day1_source)
+
+    assert "audioFilesByKey: audioFilesByKey" in registration_block
+    assert "audioFileOverridesByKey: audioFilesByKey" in registration_block
+    assert "intro_basic: audioFilesForAllLocales(audioFileNames.intro_basic)" not in registration_block

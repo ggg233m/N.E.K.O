@@ -250,6 +250,7 @@
                 && typeof this.window.nekoTutorialOverlay.relayToChat === 'function'
                 ? this.window.nekoTutorialOverlay
                 : null;
+            let nativeRelaySequence = 0;
             if (broadcastChannel || nativeRelay) {
                 return {
                     postMessage(message) {
@@ -265,7 +266,10 @@
                         }
                         if (nativeRelay) {
                             try {
-                                nativeRelay.relayToChat(outgoingMessage);
+                                nativeRelay.relayToChat(Object.assign({}, outgoingMessage, {
+                                    sequence: ++nativeRelaySequence,
+                                    payload: Object.assign({}, outgoingMessage)
+                                }));
                             } catch (_) {}
                         }
                     }
@@ -276,6 +280,16 @@
                 return this.externalChatChannelProvider() || null;
             }
             return null;
+        }
+
+        resolveLanlanName() {
+            try {
+                return (this.window.appState && this.window.appState.lanlan_name)
+                    || (this.window.lanlan_config && this.window.lanlan_config.lanlan_name)
+                    || '';
+            } catch (_) {
+                return '';
+            }
         }
 
         postExternalChatCommand(action, payload, options) {
@@ -292,6 +306,12 @@
             const message = Object.assign({
                 action: normalizedAction
             }, payload || {});
+            if (!message.lanlan_name) {
+                const lanlanName = this.resolveLanlanName();
+                if (lanlanName) {
+                    message.lanlan_name = lanlanName;
+                }
+            }
             if (!Number.isFinite(message.timestamp)) {
                 message.timestamp = Date.now();
             }
@@ -446,7 +466,6 @@
             this.setExternalizedChatAvatarToolMenuOpen(false, 'clear-externalized-chat-fx');
             this.setExternalizedChatCompactHistoryOpen(false, 'clear-externalized-chat-fx');
             this.setExternalizedChatCompactToolFanOpen(false, 'clear-externalized-chat-fx');
-            this.setExternalizedChatInputLocked(false, 'clear-externalized-chat-fx');
         }
 
         onExternalChatReady() {

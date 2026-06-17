@@ -431,9 +431,10 @@ def test_pc_overlay_cursor_effect_is_one_shot_not_persisted_on_external_chat_bri
         1,
     )[0]
 
-    assert "window.nekoTutorialOverlay" in source
-    assert "typeof host.update === 'function'" in source
-    assert "host.update(patch);" in bridge_block
+    assert "function withoutTransientYuiGuideCursorEffect(cursor)" in source
+    assert "yuiGuidePcOverlayCursor = withoutTransientYuiGuideCursorEffect(patch.cursor);" in bridge_block
+    assert "payload.cursor = patch.cursor || null;" in bridge_block
+    assert "payload.cursor = yuiGuidePcOverlayCursor;" in bridge_block
 
 
 def test_day1_round_start_uses_avatar_floating_round_lifecycle():
@@ -656,7 +657,7 @@ def test_day2_intro_externalized_cursor_uses_scene_action_not_wobble():
 def test_only_day1_tutorial_configs_use_cursor_wobble():
     guide_files = sorted(Path("static").glob("tutorial/yui-guide/days/day*-*.js"))
     for guide_file in guide_files:
-        if guide_file.name.startswith("day1-"):
+        if guide_file.name.startswith("tutorial/yui-guide/days/day1-"):
             continue
         source = guide_file.read_text(encoding="utf-8")
         assert "cursorAction: 'wobble'" not in source

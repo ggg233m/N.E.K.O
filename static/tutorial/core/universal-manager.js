@@ -581,7 +581,7 @@ class UniversalTutorialManager {
         return state;
     }
 
-    markAvatarFloatingGuideRoundOutcome(day, outcome, rawReason = outcome, options = {}) {
+    markAvatarFloatingGuideRoundOutcome(day, outcome, rawReason = outcome) {
         const round = normalizeAvatarFloatingGuideRound(day);
         const normalizedOutcome = outcome === 'skip' ? 'skip' : (outcome === 'complete' ? 'complete' : 'destroy');
         const normalizedRawReason = typeof rawReason === 'string' && rawReason.trim()
@@ -614,11 +614,9 @@ class UniversalTutorialManager {
         };
         state.updatedAt = new Date(endedAt).toISOString();
         saveAvatarFloatingGuideState(state);
-        if (options.dispatchEvent !== false) {
-            window.dispatchEvent(new CustomEvent(`neko:avatar-floating-guide-${normalizedOutcome}`, {
-                detail: { day: round, state, endState: state.lastEndState },
-            }));
-        }
+        window.dispatchEvent(new CustomEvent(`neko:avatar-floating-guide-${normalizedOutcome}`, {
+            detail: { day: round, state, endState: state.lastEndState },
+        }));
         return state;
     }
 
@@ -642,9 +640,22 @@ class UniversalTutorialManager {
             return state.pendingRound === round || state.manualResetRound === round;
         }
         if (state.pendingRound !== round && state.manualResetRound !== round) {
-            return this.getNextAvatarFloatingGuideAutoRound() === round;
+            const today = getTodayLocalDateForAvatarFloatingGuide();
+            return state.lastAutoShownRound === round && state.lastAutoShownDate === today;
         }
         return true;
+    }
+
+    isAvatarFloatingGuideRoundRegistered(day) {
+        const round = normalizeAvatarFloatingGuideRound(day);
+        const registry = window.YuiGuideDailyGuides || {};
+        const guideConfig = registry[round] || null;
+        return !!(
+            guideConfig
+            && guideConfig.round
+            && Array.isArray(guideConfig.round.scenes)
+            && guideConfig.round.scenes.length > 0
+        );
     }
 
     getNextAvatarFloatingGuideAutoRound() {
@@ -685,18 +696,6 @@ class UniversalTutorialManager {
             }
         }
         return null;
-    }
-
-    isAvatarFloatingGuideRoundRegistered(day) {
-        const round = normalizeAvatarFloatingGuideRound(day);
-        const registry = window.YuiGuideDailyGuides || {};
-        const guideConfig = registry[round] || null;
-        return !!(
-            guideConfig
-            && guideConfig.round
-            && Array.isArray(guideConfig.round.scenes)
-            && guideConfig.round.scenes.length > 0
-        );
     }
 
     async maybeStartAvatarFloatingGuideAutoRound(delayMs = 1200) {
@@ -2739,9 +2738,6 @@ class UniversalTutorialManager {
         }
         if (this.currentPage !== 'home') {
             throw new Error('avatar_floating_guide_requires_home');
-        }
-        if (!this.isAvatarFloatingGuideRoundRegistered(round)) {
-            throw new Error('avatar_floating_round_unregistered');
         }
         const buttonsReady = await this.waitForFloatingButtons();
         if (!buttonsReady) {
@@ -5680,15 +5676,10 @@ class UniversalTutorialManager {
         this._teardownTutorialUI();
 
         if (avatarFloatingRound) {
-            this.markAvatarFloatingGuideRoundOutcome(
-                avatarFloatingRound,
-                endMeta.reason,
-                endMeta.rawReason,
-                { dispatchEvent: false }
-            );
+            this.markAvatarFloatingGuideRoundOutcome(avatarFloatingRound, endMeta.reason, endMeta.rawReason);
             this.activeAvatarFloatingGuideRound = null;
         } else if (this.currentPage === 'home' && (endMeta.reason === 'complete' || endMeta.reason === 'skip')) {
-            this.markAvatarFloatingGuideRoundOutcome(1, endMeta.reason, endMeta.rawReason, { dispatchEvent: false });
+            this.markAvatarFloatingGuideRoundOutcome(1, endMeta.reason, endMeta.rawReason);
         }
         let avatarFloatingEndState = null;
         if (avatarFloatingRound || this.currentPage === 'home') {
@@ -6258,7 +6249,6 @@ class UniversalTutorialManager {
 
     async resetAllTutorials() {
         await this.resetHomeTutorialPromptState('manual_all_tutorial_reset');
-        localStorage.removeItem(AVATAR_FLOATING_GUIDE_STORAGE_KEY);
         TUTORIAL_PAGES.forEach(page => {
             this.getResetStorageKeysForPage(page).forEach(key => localStorage.removeItem(key));
         });
@@ -6289,7 +6279,6 @@ class UniversalTutorialManager {
 
         if (pageKey === 'home') {
             this.markTutorialManualStartIntent('home');
-            this.resetAvatarFloatingGuideRoundState(1, { source: 'manual_home_tutorial_reset' });
             dispatchHomeTutorialResetEvent('home', 'manual_home_tutorial_reset');
         }
 
@@ -6425,7 +6414,6 @@ async function resetAllTutorials() {
         TUTORIAL_PAGES.forEach(page => {
             getTutorialStorageKeysForPageFallback(page).forEach(key => localStorage.removeItem(key));
         });
-        localStorage.removeItem(AVATAR_FLOATING_GUIDE_STORAGE_KEY);
         localStorage.setItem(getTutorialManualIntentKeyForPage('home'), 'true');
         dispatchHomeTutorialResetEvent('all', 'manual_all_tutorial_reset');
     }
@@ -6481,7 +6469,6 @@ async function resetTutorialForPage(pageKey) {
     } else {
         if (pageKey === 'home') {
             await postTutorialPromptReset('manual_home_tutorial_reset');
-            localStorage.removeItem(AVATAR_FLOATING_GUIDE_STORAGE_KEY);
         }
         if (pageKey === 'model_manager') {
             getTutorialStorageKeysForPageFallback('model_manager').forEach(key => localStorage.removeItem(key));

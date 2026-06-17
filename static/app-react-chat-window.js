@@ -101,11 +101,12 @@
         galgameOptions: [],
         galgameOptionsLoading: false,
         galgameTemporarilyDisabled: false,
+        homeTutorialInputLocked: false,
         homeTutorialInteractionLocked: false,
         _galgameRequestSeq: 0,
         // 通用 ChoicePrompt 框架（PR #1141 follow-up #2）。当前承载 mini_game_invite
         // 三选项；galgame mode 仍走 galgameOptions 路径（BC，渐进迁移）。
-        // shape: { source: 'mini_game_invite'|'new_user_icebreaker', sessionId, gameType, options: [{choice,label}] } | null
+        // shape: { source: 'mini_game_invite', sessionId, gameType, options: [{choice,label}] } | null
         choicePrompt: null,
         // dedupe set：已经 window.open 过的 mini-game session_id。键集，行为按 set 用。
         // 防止 endpoint 路径 + WS push 路径同一 session 双开窗口。
@@ -3469,8 +3470,24 @@
     // 直接 callback；这里只是 BC 兜底）；source==='mini_game_invite' 走新逻辑。
 
     function handleChoiceSelect(option, source) {
-        if (isHomeTutorialInteractionLocked() || getEffectiveComposerHidden()) return;
         if (!option || typeof option.choice !== 'string') return;
+        if (source === 'new_user_icebreaker') {
+            var prompt = state.choicePrompt;
+            if (!prompt || prompt.source !== 'new_user_icebreaker') return;
+            var detail = {
+                sessionId: prompt.sessionId || '',
+                gameType: prompt.gameType || '',
+                choice: option.choice,
+                label: option.label || '',
+                option: option
+            };
+            state.choicePrompt = null;
+            renderWindow();
+            window.dispatchEvent(new CustomEvent('neko:icebreaker-choice-selected', { detail: detail }));
+            dispatchHostEvent('icebreaker-choice-selected', detail);
+            return;
+        }
+        if (isHomeTutorialInteractionLocked() || getEffectiveComposerHidden()) return;
         if (source === 'galgame') {
             // Forward to legacy galgame handler if it shows up here
             if (typeof option.text === 'string') {
@@ -3482,30 +3499,13 @@
             handleMiniGameInviteChoice(option);
             return;
         }
-        if (source === 'new_user_icebreaker') {
-            handleNewUserIcebreakerChoice(option);
-            return;
-        }
-    }
-
-    function handleNewUserIcebreakerChoice(option) {
-        var prompt = state.choicePrompt;
-        if (!prompt || prompt.source !== 'new_user_icebreaker') return;
-        state.choicePrompt = null;
-        renderWindow();
-        try {
-            window.dispatchEvent(new CustomEvent('neko:icebreaker-choice-selected', {
-                detail: {
-                    source: 'new_user_icebreaker',
-                    sessionId: prompt.sessionId || '',
-                    choice: option.choice,
-                    label: option.label || ''
-                }
-            }));
-        } catch (_) {}
     }
 
     function handleCompactChatStateChange(nextCompactChatState) {
+        if ((state.homeTutorialInputLocked || isHomeTutorialInteractionLocked())
+            && normalizeCompactChatState(nextCompactChatState) === 'input') {
+            return;
+        }
         setCompactChatState(nextCompactChatState);
     }
 
@@ -3762,27 +3762,37 @@
         var sessionId = String(payload.sessionId || '');
         if (!sessionId) return;
         var rawOptions = Array.isArray(payload.options) ? payload.options : [];
+        if (!rawOptions.length) return;
         var cleanedOptions = rawOptions.map(function (o) {
             return {
                 choice: String((o && o.choice) || ''),
                 label: String((o && o.label) || '')
             };
         }).filter(function (o) { return o.choice && o.label; });
-        if (!cleanedOptions.length) return;
+        if (!cleanedOptions.length) {
+            console.warn('[NewUserIcebreaker] all options filtered out, skipping render', payload);
+            return;
+        }
         state.choicePrompt = {
             source: 'new_user_icebreaker',
             sessionId: sessionId,
+            gameType: String(payload.gameType || 'new_user_icebreaker'),
             options: cleanedOptions
         };
         invalidatePendingGalgameRequest();
         renderWindow();
     }
 
-    function clearNewUserIcebreakerPrompt(sessionId) {
-        if (!state.choicePrompt || state.choicePrompt.source !== 'new_user_icebreaker') return;
-        if (sessionId && state.choicePrompt.sessionId !== sessionId) return;
-        state.choicePrompt = null;
-        renderWindow();
+    function setChoicePrompt(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        var source = String(payload.source || '');
+        if (source === 'new_user_icebreaker') {
+            setNewUserIcebreakerPrompt(payload);
+            return;
+        }
+        if (source === 'mini_game_invite') {
+            setMiniGameInvitePrompt(payload);
+        }
     }
 
     function dismissChoicePromptIfMatches(sessionId) {
@@ -4041,15 +4051,51 @@
         if (state.homeTutorialInteractionLocked === next) {
             return;
         }
+        if (next && getCurrentCompactChatState() === 'input') {
+            resetCompactChatState();
+        }
         state.homeTutorialInteractionLocked = next;
         state.viewProps = Object.assign({}, ensureViewProps(), {
+            compactChatState: getCurrentCompactChatState(),
             composerDisabled: next
         });
         renderWindow();
     }
 
-    function createHomeTutorialRequestId(kind, reason) {
-        return 'home-tutorial-' + String(kind || 'request') + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '-' + String(reason || '');
+    function createHomeTutorialRequestId(prefix, reason) {
+        return [
+            prefix || 'home-tutorial',
+            Date.now(),
+            Math.random().toString(36).slice(2, 8),
+            String(reason || '').replace(/[^a-z0-9_-]+/gi, '-').slice(0, 32)
+        ].filter(Boolean).join('-');
+    }
+
+    function setHomeTutorialInputLocked(locked, reason) {
+        var next = locked === true;
+        if (state.homeTutorialInputLocked !== next) {
+            if (next && getCurrentCompactChatState() === 'input') {
+                resetCompactChatState();
+            }
+            state.homeTutorialInputLocked = next;
+            state.viewProps = Object.assign({}, ensureViewProps(), {
+                compactChatState: getCurrentCompactChatState(),
+                compactInputLocked: next
+            });
+            renderWindow();
+        }
+    }
+
+    function setAvatarToolMenuOpen(open, reason) {
+        var nextOpen = open === true;
+        setViewProps({
+            compactChatState: nextOpen ? 'input' : getCurrentCompactChatState(),
+            avatarToolMenuOpenRequest: {
+                id: createHomeTutorialRequestId('avatar-tool-menu', reason),
+                open: nextOpen,
+                reason: reason || ''
+            }
+        });
     }
 
     function setCompactToolFanOpen(open, reason) {
@@ -4059,7 +4105,7 @@
             compactToolFanOpenRequest: {
                 id: createHomeTutorialRequestId('compact-tool-fan', reason),
                 open: nextOpen,
-                reason: String(reason || 'home-tutorial')
+                reason: reason || ''
             }
         });
     }
@@ -4071,7 +4117,38 @@
             compactHistoryOpenRequest: {
                 id: createHomeTutorialRequestId('compact-history', reason),
                 open: nextOpen,
-                reason: String(reason || 'home-tutorial')
+                reason: reason || ''
+            }
+        });
+    }
+
+    function rotateCompactToolWheel(direction, stepCount, reason) {
+        var normalizedDirection = Number(direction) < 0 ? -1 : 1;
+        var normalizedStepCount = Number.isFinite(Number(stepCount))
+            ? Math.max(1, Math.min(7, Math.floor(Number(stepCount))))
+            : 1;
+        setViewProps({
+            compactChatState: 'input',
+            compactToolWheelRotateRequest: {
+                id: createHomeTutorialRequestId('compact-tool-wheel-rotate', reason),
+                direction: normalizedDirection,
+                stepCount: normalizedStepCount,
+                reason: reason || '',
+                forceFast: true
+            }
+        });
+    }
+
+    function setCompactToolWheelIndex(index, reason) {
+        var normalizedIndex = Number.isFinite(Number(index))
+            ? Math.max(0, Math.min(6, Math.floor(Number(index))))
+            : 0;
+        setViewProps({
+            compactChatState: 'input',
+            compactToolWheelIndexRequest: {
+                id: createHomeTutorialRequestId('compact-tool-wheel-index', reason),
+                index: normalizedIndex,
+                reason: reason || ''
             }
         });
     }
@@ -5105,6 +5182,9 @@
 
     function setCompactChatState(nextCompactChatState) {
         var normalized = normalizeCompactChatState(nextCompactChatState);
+        if ((state.homeTutorialInputLocked || isHomeTutorialInteractionLocked()) && normalized === 'input') {
+            return getCurrentCompactChatState();
+        }
         if (state.compactChatState === normalized) {
             return normalized;
         }
@@ -6200,24 +6280,28 @@
         window.addEventListener('neko:tutorial-started', function (event) {
             var detail = event && event.detail ? event.detail : {};
             if (detail.page !== 'home') return;
+            setHomeTutorialInteractionLocked(true, 'tutorial-started');
             setGalgameModeTemporarilyDisabled(true);
         });
 
         window.addEventListener('neko:tutorial-completed', function (event) {
             var detail = event && event.detail ? event.detail : {};
             if (detail.page !== 'home') return;
+            setHomeTutorialInteractionLocked(false, 'tutorial-completed');
             setGalgameModeTemporarilyDisabled(false);
         });
 
         window.addEventListener('neko:tutorial-skipped', function (event) {
             var detail = event && event.detail ? event.detail : {};
             if (detail.page !== 'home') return;
+            setHomeTutorialInteractionLocked(false, 'tutorial-skipped');
             setGalgameModeTemporarilyDisabled(false);
         });
 
         window.addEventListener('neko:tutorial-ended-without-completion', function (event) {
             var detail = event && event.detail ? event.detail : {};
             if (detail.page !== 'home') return;
+            setHomeTutorialInteractionLocked(false, 'tutorial-ended-without-completion');
             setGalgameModeTemporarilyDisabled(false);
         });
 
@@ -6554,9 +6638,13 @@
         setMessages: setMessages,
         setComposerAttachments: setComposerAttachments,
         setComposerHidden: setComposerHidden,
+        setHomeTutorialInputLocked: setHomeTutorialInputLocked,
         setHomeTutorialInteractionLocked: setHomeTutorialInteractionLocked,
+        setAvatarToolMenuOpen: setAvatarToolMenuOpen,
         setCompactToolFanOpen: setCompactToolFanOpen,
         setCompactHistoryOpen: setCompactHistoryOpen,
+        rotateCompactToolWheel: rotateCompactToolWheel,
+        setCompactToolWheelIndex: setCompactToolWheelIndex,
         deactivateToolCursor: deactivateToolCursor,
         appendMessage: appendMessage,
         updateMessage: updateMessage,
@@ -6600,8 +6688,8 @@
         refreshGalgameOptions: fetchGalgameOptionsForLatestTurn,
         // Mini-game invite ChoicePrompt：app-websocket.js 收到对应 WS message 时调
         setMiniGameInvitePrompt: setMiniGameInvitePrompt,
+        setChoicePrompt: setChoicePrompt,
         setNewUserIcebreakerPrompt: setNewUserIcebreakerPrompt,
-        clearNewUserIcebreakerPrompt: clearNewUserIcebreakerPrompt,
         // unified resolved handler：accept 兼 launch / decline / suppress 都通过
         // 这条入口分发——前端 dismiss prompt UI + accept 时 window.open。替代了
         // 旧 launchMiniGame（accept-only）路径，让 codex P2 的 cross-window

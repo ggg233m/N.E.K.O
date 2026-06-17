@@ -100,12 +100,6 @@
             let narrationPromise = Promise.resolve();
             const legacyScene = scene || {};
             const audio = timelineScene && timelineScene.audio ? timelineScene.audio : {};
-            const resolveTimelineVoiceKey = (voiceKey) => {
-                const resolvedSceneVoiceKey = typeof director.resolveAvatarFloatingSceneVoiceKey === 'function'
-                    ? director.resolveAvatarFloatingSceneVoiceKey(legacyScene)
-                    : '';
-                return resolvedSceneVoiceKey || voiceKey || audio.voiceKey || legacyScene.voiceKey || '';
-            };
             return {
                 play: (voiceKey, audioOptions) => {
                     const text = audio.text || (
@@ -113,7 +107,7 @@
                             ? director.resolveAvatarFloatingSceneText(legacyScene)
                             : ''
                     );
-                    const resolvedVoiceKey = resolveTimelineVoiceKey(voiceKey);
+                    const resolvedVoiceKey = voiceKey || audio.voiceKey || legacyScene.voiceKey || '';
                     if (typeof director.speakGuideLine === 'function' && (text || resolvedVoiceKey)) {
                         narrationPromise = Promise.resolve(director.speakGuideLine(text, {
                             voiceKey: resolvedVoiceKey,
@@ -129,12 +123,9 @@
                     return null;
                 },
                 waitForEnd: () => narrationPromise,
-                getDurationMs: (voiceKey, locale) => {
+                getDurationMs: (voiceKey) => {
                     if (typeof director.getGuideVoiceDurationMs === 'function') {
-                        return director.getGuideVoiceDurationMs(
-                            resolveTimelineVoiceKey(voiceKey),
-                            locale || audio.locale || ''
-                        );
+                        return director.getGuideVoiceDurationMs(voiceKey || audio.voiceKey || '', '');
                     }
                     if (Number.isFinite(audio.durationMs)) {
                         return audio.durationMs;
@@ -144,7 +135,7 @@
                 resolveCueMs: (voiceKey, cueName) => {
                     if (typeof director.resolveGuideVoiceCueTargetMs === 'function') {
                         return director.resolveGuideVoiceCueTargetMs(
-                            resolveTimelineVoiceKey(voiceKey),
+                            voiceKey || audio.voiceKey || '',
                             cueName,
                             0,
                             audio.text || legacyScene.text || ''

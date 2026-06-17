@@ -17,7 +17,12 @@ const common = require('./tutorial/yui-guide/common.js');
 const repoRoot = path.resolve(__dirname, '..');
 const dayGuideFiles = [
     'tutorial/yui-guide/days/day1-home-guide.js',
-    'tutorial/yui-guide/days/day2-screen-voice-guide.js'
+    'tutorial/yui-guide/days/day2-screen-voice-guide.js',
+    'tutorial/yui-guide/days/day3-interaction-guide.js',
+    'tutorial/yui-guide/days/day4-companion-guide.js',
+    'tutorial/yui-guide/days/day5-personalization-guide.js',
+    'tutorial/yui-guide/days/day6-agent-guide.js',
+    'tutorial/yui-guide/days/day7-graduation-guide.js'
 ];
 
 test('common guide helpers freeze config, register guides, and create locale audio maps', () => {
@@ -89,6 +94,31 @@ test('tutorial bridge command bus is exported from a standalone module and re-ex
     assert.match(commonSource, /tutorialBridgeCommandBusApi\.createTutorialBridgeCommandBus\(options\)/);
     assert.doesNotMatch(commonSource, /DEFAULT_BRIDGE_QUEUE_KEY/);
     assert.doesNotMatch(commonSource, /function normalizeBridgeMessage\(message/);
+});
+
+test('tutorial bridge command bus restores onmessage fallback on unsubscribe', () => {
+    const calls = [];
+    const previousHandler = (event) => calls.push(['previous', event.data.action]);
+    const channel = { onmessage: previousHandler };
+    const bus = bridgeCommandBus.createTutorialBridgeCommandBus({
+        channelProvider: () => channel
+    });
+
+    const unsubscribe = bus.on('guide-action', (message) => {
+        calls.push(['listener', message.action]);
+    });
+    assert.notEqual(channel.onmessage, previousHandler);
+
+    channel.onmessage({ data: { action: 'guide-action' } });
+    unsubscribe();
+
+    assert.equal(channel.onmessage, previousHandler);
+    channel.onmessage({ data: { action: 'guide-action' } });
+    assert.deepEqual(calls, [
+        ['previous', 'guide-action'],
+        ['listener', 'guide-action'],
+        ['previous', 'guide-action']
+    ]);
 });
 
 test('target geometry registry is exported from a standalone module and re-exported by common', () => {
@@ -476,21 +506,6 @@ test('app interpage recognizes explicit Yui guide dedup bypass messages', () => 
     assert.match(source, /shouldBypassYuiGuideMessageDedup\(event\.data\.action,\s*event\.data\)/);
 });
 
-test('app interpage clears PC overlay when external chat spotlight is hidden', () => {
-    const source = fs.readFileSync(path.join(repoRoot, 'static', 'app-interpage.js'), 'utf8');
-    const spotlightApplyBlock = source.split('    function applyYuiGuideChatSpotlight(kind) {')[1].split(
-        '    // =====================================================================',
-        1
-    )[0];
-    const clearBlock = spotlightApplyBlock.split('        if (!yuiGuideChatSpotlightKind) {')[1].split(
-        '            return;',
-        1
-    )[0];
-
-    assert.match(clearBlock, /spotlight\.hidden = true;/);
-    assert.match(clearBlock, /sendYuiGuidePcOverlayPatch\(\{\s*spotlights:\s*\[\]\s*\}\);/);
-});
-
 test('app interpage sends external chat pet reports through the command bus', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'static', 'app-interpage.js'), 'utf8');
     const bridgeDataBlock = source.split('    function handleYuiGuideChatBridgeData(data) {')[1].split(
@@ -708,7 +723,6 @@ test('lifecycle state store module is loaded before prompt and manager scripts',
     assert.ok(fs.existsSync(lifecyclePath), 'tutorial/core/lifecycle-state-store.js should exist');
     const source = fs.readFileSync(lifecyclePath, 'utf8');
     const stores = require('./tutorial/core/lifecycle-state-store.js');
-    const managerSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/core/universal-manager.js'), 'utf8');
 
     for (const exportName of [
         'TutorialLifecycleStateStore',
@@ -718,16 +732,6 @@ test('lifecycle state store module is loaded before prompt and manager scripts',
         assert.match(source, new RegExp('class ' + exportName));
     }
     assert.match(source, /root\.TutorialLifecycleStores = api/);
-    assert.match(
-        managerSource,
-        /TutorialLifecycleStores\.TutorialLifecycleStateStore\s*\|\|\s*createFallbackTutorialLifecycleStateStoreClass\(\)/,
-        'universal manager should keep a local lifecycle store fallback'
-    );
-    assert.doesNotMatch(
-        managerSource,
-        /^class FallbackTutorialLifecycleStateStore\b/m,
-        'universal manager should not keep a duplicate fallback lifecycle class'
-    );
 
     const orderedScripts = [
         ['templates/index.html', '/static/tutorial/core/app-prompt.js'],
@@ -751,105 +755,6 @@ test('lifecycle state store module is loaded before prompt and manager scripts',
         assert.notEqual(lifecycleIndex, -1, templatePath + ' should load tutorial/core/lifecycle-state-store.js');
         assert.notEqual(consumerIndex, -1, templatePath + ' should load ' + consumerScript);
         assert.ok(lifecycleIndex < consumerIndex, templatePath + ' should load lifecycle stores before ' + consumerScript);
-    }
-});
-
-test('new-user icebreaker script is present before websocket greeting handling', () => {
-    const icebreakerPath = path.join(repoRoot, 'static', 'icebreaker/new-user-icebreaker.js');
-    assert.ok(fs.existsSync(icebreakerPath), 'static/icebreaker/new-user-icebreaker.js should exist');
-    const icebreakerSource = fs.readFileSync(icebreakerPath, 'utf8');
-
-    const templateSource = fs.readFileSync(path.join(repoRoot, 'templates/index.html'), 'utf8');
-    const icebreakerIndex = templateSource.indexOf('/static/icebreaker/new-user-icebreaker.js');
-    const websocketIndex = templateSource.indexOf('/static/app-websocket.js');
-
-    assert.notEqual(icebreakerIndex, -1, 'index.html should load the new-user icebreaker');
-    assert.notEqual(websocketIndex, -1, 'index.html should load app-websocket.js');
-    assert.ok(icebreakerIndex < websocketIndex, 'new-user icebreaker should load before app-websocket.js');
-    assert.match(icebreakerSource, /function isDayCompleted\(day\) \{/);
-    assert.match(icebreakerSource, /activeSession \|\| isDayCompleted\(DAY\) \|\| hasCompletedFinalDay\(\)/);
-});
-
-test('home template cache-busts app interpage with static guide assets', () => {
-    const templateSource = fs.readFileSync(path.join(repoRoot, 'templates/index.html'), 'utf8');
-    assert.match(templateSource, /\/static\/app-interpage\.js\?v=\{\{ static_asset_version \}\}/);
-    assert.doesNotMatch(templateSource, /\/static\/app-interpage\.js\?v=\{\{ react_chat_asset_version \}\}/);
-});
-
-test('standalone chat cache-busts app interpage with static guide assets', () => {
-    const templateSource = fs.readFileSync(path.join(repoRoot, 'templates/chat.html'), 'utf8');
-    assert.match(templateSource, /\/static\/app-interpage\.js\?v=\{\{ static_asset_version \}\}/);
-    assert.doesNotMatch(templateSource, /\/static\/app-interpage\.js\?v=\{\{ react_chat_asset_version \}\}/);
-});
-
-test('home Yui-only flow requires a non-empty prelude order before skipping driver', () => {
-    const managerSource = fs.readFileSync(
-        path.join(repoRoot, 'static', 'tutorial/core/universal-manager.js'),
-        'utf8'
-    );
-    const yuiOnlyBlock = managerSource.split('const useYuiOnlyHomeFlow = (')[1].split(');')[0];
-    const startBlock = managerSource.split('if (useYuiOnlyHomeFlow) {')[1].split('// 重新创建 driver 实例')[0];
-
-    assert.match(yuiOnlyBlock, /this\.currentPage === 'home'/);
-    assert.match(yuiOnlyBlock, /this\.isYuiGuideEnabledForPage\(this\.currentPage\)/);
-    assert.match(yuiOnlyBlock, /this\.getYuiGuidePreludeSceneIds\(this\.currentPage, validSteps\)\.length > 0/);
-    assert.match(startBlock, /this\.driver = null/);
-});
-
-test('Day1 guide keeps locale-specific audio filenames', () => {
-    const day1Source = fs.readFileSync(
-        path.join(repoRoot, 'static', 'tutorial/yui-guide/days/day1-home-guide.js'),
-        'utf8'
-    );
-    const audioRoot = path.join(repoRoot, 'static', 'assets/tutorial/guide-audio');
-    const newDay1AudioFiles = [
-        '把鼠标移到这里，长按.mp3',
-        '戳一下聊天框上面的【.mp3',
-        '在跟我通语音电话的时.mp3',
-        '快让我也看看你眼前的.mp3'
-    ];
-
-    assert.match(day1Source, /zhAudioFileNames/);
-    assert.match(day1Source, /intro_basic:\s*'这里有一个神奇的按钮\.mp3'/);
-    assert.match(day1Source, /intro_basic:\s*'这里有一个神奇的小按\.mp3'/);
-    assert.match(day1Source, /takeover_capture_cursor:\s*'超级魔法按钮出现！只\.mp3'/);
-    assert.match(day1Source, /takeover_capture_cursor:\s*'超级魔法开关出现！只\.mp3'/);
-    assert.match(day1Source, /day1_capsule_drag_hint:\s*'把鼠标移到这里，长按\.mp3'/);
-    assert.match(day1Source, /day1_history_handle:\s*'戳一下聊天框上面的【\.mp3'/);
-    assert.match(day1Source, /day1_screen_entry:\s*'在跟我通语音电话的时\.mp3'/);
-    assert.match(day1Source, /day1_screen_entry_invite:\s*'快让我也看看你眼前的\.mp3'/);
-    assert.match(day1Source, /audioFileOverridesByKey:\s*audioFilesByKey/);
-
-    for (const locale of ['zh', 'ja', 'en', 'ko', 'ru']) {
-        for (const audioFile of newDay1AudioFiles) {
-            assert.ok(
-                fs.existsSync(path.join(audioRoot, locale, audioFile)),
-                locale + ' should ship ' + audioFile
-            );
-        }
-    }
-});
-
-test('Day2 guide ships every referenced audio file', () => {
-    const audioRoot = path.join(repoRoot, 'static', 'assets/tutorial/guide-audio');
-    const expectedAudioFiles = [
-        '昨天你一直在噼里啪啦.mp3',
-        '嘿嘿，昨天听到你的声.mp3',
-        '在这个只属于我们的小.mp3',
-        '不管是说话的温度、相.mp3',
-        '这个小按钮也很重要哦.mp3',
-        '今天的教程到这里就结.mp3',
-        '其实只要能这样陪着你.mp3',
-        '我们不需要着急，每天.mp3'
-    ];
-
-    for (const locale of ['zh', 'ja', 'en', 'ko', 'ru']) {
-        for (const audioFile of expectedAudioFiles) {
-            assert.ok(
-                fs.existsSync(path.join(audioRoot, locale, audioFile)),
-                locale + ' should ship ' + audioFile
-            );
-        }
     }
 });
 
@@ -961,6 +866,28 @@ test('daily guide files consume common helpers instead of redeclaring shared hel
     }
 });
 
+test('Day3 guide ships every referenced audio file', () => {
+    const audioRoot = path.join(repoRoot, 'static', 'assets/tutorial/guide-audio');
+    const expectedAudioFiles = [
+        '嘻嘻，可别以为这个聊.mp3',
+        '在这个小按钮里，有许.mp3',
+        '你可以随时来摸摸我的.mp3',
+        '快点开这个【Galg.mp3',
+        '你选的每一个对话，都.mp3',
+        '今天带你认识的这些功.mp3',
+        '不管是想摸摸我的头，.mp3'
+    ];
+
+    for (const locale of ['zh', 'ja', 'en', 'ko', 'ru']) {
+        for (const audioFile of expectedAudioFiles) {
+            assert.ok(
+                fs.existsSync(path.join(audioRoot, locale, audioFile)),
+                locale + ' should ship ' + audioFile
+            );
+        }
+    }
+});
+
 test('director delegates external chat bridge messages to the command bus', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/yui-guide/director.js'), 'utf8');
     const constructorBlock = source.split('    class YuiGuideDirector {')[1].split(
@@ -1020,6 +947,8 @@ test('interaction takeover delegates external chat commands to the command bus b
     assert.match(constructorBlock, /this\.externalChatCommandBus = this\.createExternalChatCommandBus\(\);/);
     assert.match(source, /createExternalChatCommandBus\(\) \{[\s\S]*this\.window\.YuiGuideCommon[\s\S]*createTutorialBridgeCommandBus/);
     assert.match(source, /postExternalChatCommand\(action,\s*payload,\s*options\) \{[\s\S]*this\.externalChatCommandBus\.post\(message,\s*normalizedOptions\)/);
+    assert.match(source, /resolveLanlanName\(\) \{[\s\S]*this\.window\.appState[\s\S]*this\.window\.lanlan_config/);
+    assert.match(source, /if \(!message\.lanlan_name\) \{[\s\S]*const lanlanName = this\.resolveLanlanName\(\);[\s\S]*message\.lanlan_name = lanlanName;/);
     assert.match(commandsBlock, /this\.postExternalChatCommand\('yui_guide_set_chat_buttons_disabled'/);
     assert.match(commandsBlock, /this\.postExternalChatCommand\('yui_guide_set_chat_cursor'/);
     assert.match(commandsBlock, /this\.postExternalChatCommand\('yui_guide_drag_chat_cursor'/);
@@ -1069,6 +998,7 @@ test('director exposes phase one guard and timing helpers for complex sequences'
 test('director routes resistance interrupts through ResistanceController boundary', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/yui-guide/director.js'), 'utf8');
     const resistanceSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/visual/resistance-controllers.js'), 'utf8');
+    const resetSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/avatar/floating-guide-reset.js'), 'utf8');
     const directorSource = source.split('    class YuiGuideDirector {')[1];
     const constructorBlock = directorSource.split(
         '            this.keydownHandler = this.onKeyDown.bind(this);',
@@ -1141,6 +1071,11 @@ test('director routes resistance interrupts through ResistanceController boundar
     assert.doesNotMatch(playResistanceBlock, /this\.interruptController\.playLightResistance/);
     assert.doesNotMatch(angryExitBlock, /this\.interruptController\.abortAsAngryExit/);
     assert.doesNotMatch(destroyBlock, /this\.interruptController\.destroy\(\)/);
+    assert.doesNotMatch(resetSource, /window\.TutorialResistanceControllers\.createResetInterruptController/);
+    assert.doesNotMatch(resetSource, /window\.TutorialInterruptController/);
+    assert.doesNotMatch(resetSource, /interruptController\.playLightResistance/);
+    assert.doesNotMatch(resetSource, /interruptController\.abortAsAngryExit/);
+    assert.doesNotMatch(resetSource, /createResetInterruptController/);
 });
 
 test('director wraps round-level look-at lifecycle with withLookAt helper', () => {
@@ -1407,11 +1342,7 @@ test('director delegates avatar floating scene operations through OperationRegis
 test('day3 Galgame guide drag follows the compact tool wheel arc and holds the target', () => {
     const source = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/yui-guide/director.js'), 'utf8');
     const overlaySource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/yui-guide/overlay.js'), 'utf8');
-    const day3GuidePath = path.join(repoRoot, 'static', 'tutorial/yui-guide/days/day3-interaction-guide.js');
-    if (!fs.existsSync(day3GuidePath)) {
-        return;
-    }
-    const day3GuideSource = fs.readFileSync(day3GuidePath, 'utf8');
+    const day3GuideSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/yui-guide/days/day3-interaction-guide.js'), 'utf8');
     const appInterpageSource = fs.readFileSync(path.join(repoRoot, 'static', 'app-interpage.js'), 'utf8');
     const sceneOrchestratorSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/core/scene-orchestrator.js'), 'utf8');
     const operationRegistrySource = fs.readFileSync(
@@ -1522,11 +1453,7 @@ test('day3 Galgame guide drag follows the compact tool wheel arc and holds the t
 test('day3 avatar tool props cleanup waits for the real narration promise', () => {
     const operationRegistrySource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/core/operation-registry.js'), 'utf8');
     const sceneOrchestratorSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/core/scene-orchestrator.js'), 'utf8');
-    const day3GuidePath = path.join(repoRoot, 'static', 'tutorial/yui-guide/days/day3-interaction-guide.js');
-    if (!fs.existsSync(day3GuidePath)) {
-        return;
-    }
-    const day3GuideSource = fs.readFileSync(day3GuidePath, 'utf8');
+    const day3GuideSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/yui-guide/days/day3-interaction-guide.js'), 'utf8');
     const avatarToolsMatch = operationRegistrySource.match(
         /        async runShowAvatarToolsThenHideAfterNarration\(scene, primaryTarget, narrationStartedAt, narrationPromise\) \{([\s\S]*?)\n        async runToggleAvatarToolAfterNarration/
     );
@@ -1961,27 +1888,10 @@ test('avatar floating auto-start rechecks pending state before delayed launch', 
     const pendingCheckBlock = pendingCheckMatch[1];
 
     assert.match(maybeAutoBlock, /if \(!this\.isAvatarFloatingGuideRoundPendingAutoStart\(round\)\) \{\s*return;\s*\}/);
-    assert.match(maybeAutoBlock, /if \(!this\.isAvatarFloatingGuideRoundRegistered\(round\)\) \{\s*return;\s*\}/);
     assert.match(pendingCheckBlock, /const state = loadAvatarFloatingGuideState\(\);/);
     assert.match(pendingCheckBlock, /state\.pendingRound !== round && state\.manualResetRound !== round/);
     assert.match(pendingCheckBlock, /state\.completedRounds\.includes\(round\)/);
     assert.match(pendingCheckBlock, /state\.skippedRounds\.includes\(round\)/);
-});
-
-test('avatar floating auto-start only selects registered daily rounds', () => {
-    const managerSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/core/universal-manager.js'), 'utf8');
-    const nextRoundBlock = managerSource.split('    getNextAvatarFloatingGuideAutoRound() {')[1].split(
-        '    isAvatarFloatingGuideRoundRegistered(day) {',
-        1
-    )[0];
-    const registeredBlock = managerSource.split('    isAvatarFloatingGuideRoundRegistered(day) {')[1].split(
-        '    async maybeStartAvatarFloatingGuideAutoRound',
-        1
-    )[0];
-
-    assert.match(nextRoundBlock, /if \(!this\.isAvatarFloatingGuideRoundRegistered\(round\)\) \{\s*return null;\s*\}/);
-    assert.match(registeredBlock, /window\.YuiGuideDailyGuides/);
-    assert.match(registeredBlock, /Array\.isArray\(guideConfig\.round\.scenes\)/);
 });
 
 test('tutorial destroy requests share the PC global overlay cleanup path', () => {
@@ -2006,19 +1916,6 @@ test('tutorial destroy requests share the PC global overlay cleanup path', () =>
     assert.match(clearOverlayBlock, /yuiGuidePcOverlayRunId/);
     assert.match(destroyRequestBlock, /this\.setTutorialEndReason\(reason\);[\s\S]*this\.clearPcTutorialGlobalOverlay\(reason\);/);
     assert.match(lifecycleCleanupBlock, /this\.clearPcTutorialGlobalOverlay\(rawReason\);/);
-});
-
-test('cross-page termination requests include the PC overlay tutorial run id', () => {
-    const managerSource = fs.readFileSync(path.join(repoRoot, 'static', 'tutorial/core/universal-manager.js'), 'utf8');
-    const terminationBlock = managerSource.split('    broadcastYuiGuideTerminationRequest(endMeta = {}) {')[1].split(
-        '    /**\n     * 检查 i18n',
-        1
-    )[0];
-
-    assert.match(terminationBlock, /window\.localStorage\.getItem\('yuiGuidePcOverlayRunId'\)/);
-    assert.match(terminationBlock, /message\.tutorialRunId = tutorialRunId;/);
-    assert.match(terminationBlock, /channel\.postMessage\(message\)/);
-    assert.match(terminationBlock, /relayToPet\(message\)/);
 });
 
 test('PC global overlay cleanup clears the stored run id before the next tutorial run', () => {

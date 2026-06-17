@@ -129,9 +129,7 @@
     class HomeTutorialPromptLifecycleStateStore {
         constructor(stateRef, heartbeatTokenFactory) {
             this.state = stateRef;
-            this.createHeartbeatToken = typeof heartbeatTokenFactory === 'function'
-                ? heartbeatTokenFactory
-                : () => null;
+            this.createHeartbeatToken = heartbeatTokenFactory;
         }
 
         setPromptDrivenTutorialToken(token) {
