@@ -1006,6 +1006,27 @@ def test_activity_guess_loop_skips_llm_when_narration_suppressed():
     )
 
 
+def test_activity_guess_signature_excludes_idle_bucket():
+    """idle seconds growing must not flip the dedup signature.
+
+    While AFK, system_idle_seconds keeps climbing; the old code folded
+    idle//30 into the signature, flipping it every ~30s, defeating dedup
+    and burning one emotion-tier LLM call every ~40s during pure idle.
+    The signature now keys only on "what the user is doing" (state +
+    window + subcategory); the active->idle->away transition is still
+    caught by state (away bails anyway).
+    """
+    from main_logic.activity.tracker import UserActivityTracker
+
+    source = inspect.getsource(UserActivityTracker._activity_guess_loop)
+    # idle_bucket 是旧签名里按 idle 秒数分桶的那个变量名（空烧根因），断言它
+    # 不回归即精准守住该行为。不断言 "system_idle_seconds" not in source：那比
+    # 约束目标更宽，会误伤将来 loop 里对 idle 秒数的其它无害引用（喂 LLM 的
+    # signals 仍在 _snapshot_signals_for_llm 这个独立方法里用到它）。
+    assert "idle_bucket" not in source
+    assert "sig = (" in source
+
+
 def test_conversation_turn_dispatcher_does_not_purge_topic_signals_for_redacted_turns():
     from main_logic.conversation_turns import ConversationTurnDispatcher, TopicHookTurnSink
 
