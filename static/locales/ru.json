@@ -979,6 +979,7 @@
         "openaiAssist": "OpenAI: Мощное управление памятью",
         "geminiAssist": "Gemini: Отличный интеллект и соотношение цена/качество",
         "kimiAssist": "Kimi: Поддерживает длинный контекст и визуализацию",
+        "kimiCodeAssist": "Kimi Code: совместим с Anthropic Messages, подходит для кода и длинных текстов",
         "assistApiNote": "Примечание: Только Alibaba поддерживает пользовательский голос. GLM и StepFun не рекомендуются.",
         "assistApiKeyQwen": "Вспомогательный API Key — Alibaba",
         "assistApiKeyOpenai": "Вспомогательный API Key — OpenAI",
@@ -987,6 +988,7 @@
         "assistApiKeySilicon": "Вспомогательный API Key — SiliconFlow",
         "assistApiKeyGemini": "Вспомогательный API Key — Gemini",
         "assistApiKeyKimi": "Вспомогательный API Key — Kimi",
+        "assistApiKeyKimiCode": "Ключ вспомогательного API — Kimi Code",
         "assistApiKeyHint": "(Требуется только когда вспомогательный API — {{provider}})",
         "assistApiKeyPlaceholder": "Автоматически заполняется из справочника",
         "providerNames": {
@@ -996,6 +998,7 @@
             "step": "StepFun",
             "silicon": "SiliconFlow",
             "gemini": "Gemini",
+            "kimi_code": "Moonshot Kimi Code",
             "vllm_omni": "vLLM-Omni (TTS)"
         },
         "coreProviderNames": {
@@ -1017,6 +1020,7 @@
             "silicon": "SiliconFlow (Выгодно)",
             "gemini": "Gemini (Google)",
             "kimi": "Kimi (Moonshot AI, поддерживает длинный контекст)",
+            "kimi_code": "Kimi Code (Moonshot)",
             "deepseek": "DeepSeek",
             "doubao": "ByteDance (Doubao)",
             "minimax": "MiniMax (Китай)",
@@ -1065,6 +1069,7 @@
             "silicon": "SiliconFlow",
             "gemini": "Gemini (Google)",
             "kimi": "Moonshot (Kimi)",
+            "kimi_code": "Moonshot Kimi Code",
             "doubao": "ByteDance (Doubao)",
             "minimax": "MiniMax (Китай)",
             "minimax_intl": "MiniMax (международный)",
