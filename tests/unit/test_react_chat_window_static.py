@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 
@@ -8,6 +9,7 @@ APP_BUTTONS_PATH = Path(__file__).resolve().parents[2] / "static" / "app-buttons
 APP_CHAT_EXPORT_PATH = Path(__file__).resolve().parents[2] / "static" / "app-chat-export.js"
 APP_INTERPAGE_PATH = Path(__file__).resolve().parents[2] / "static" / "app-interpage.js"
 AVATAR_UI_POPUP_PATH = Path(__file__).resolve().parents[2] / "static" / "avatar-ui-popup.js"
+STATIC_LOCALES_DIR = Path(__file__).resolve().parents[2] / "static" / "locales"
 MUSIC_UI_PATH = Path(__file__).resolve().parents[2] / "static" / "music_ui.js"
 MUSIC_UI_CSS_PATH = Path(__file__).resolve().parents[2] / "static" / "css" / "music_ui.css"
 STATIC_INDEX_CSS_PATH = Path(__file__).resolve().parents[2] / "static" / "css" / "index.css"
@@ -53,6 +55,64 @@ def assert_no_layout_transition(block: str) -> None:
     transition_section = block.split("transition:", 1)[1].split(";", 1)[0] if "transition:" in block else ""
     for prop in ("width", "height", "max-height", "min-height", "padding", "margin", "top", "right", "bottom", "left"):
         assert prop not in transition_section
+
+
+def test_chat_settings_cat_audio_toggle_is_under_auto_cat_and_dependent():
+    source = AVATAR_UI_POPUP_PATH.read_text(encoding="utf-8")
+    chat_settings_block = source.split("const chatToggles = [", 1)[1].split("];", 1)[0]
+
+    assert "id: 'auto-cat'" in chat_settings_block
+    assert "id: 'cat-audio'" in chat_settings_block
+    assert chat_settings_block.index("id: 'auto-cat'") < chat_settings_block.index("id: 'cat-audio'")
+    assert "labelKey: 'settings.toggles.catAudio'" in chat_settings_block
+    assert "dependsOnToggleId: 'auto-cat'" in chat_settings_block
+    assert "neko:auto-cat-setting-changed" not in source
+
+    cat_audio_init_block = source.split("} else if (toggle.id === 'cat-audio'", 1)[1].split(
+        "const indicator = document.createElement('div');",
+        1,
+    )[0]
+    assert "window.nekoIdleCatAudio.isEnabled()" in cat_audio_init_block
+
+    dependency_block = source.split("const updateDependentToggleState = () => {", 1)[1].split(
+        "const updateStyle = () => {",
+        1,
+    )[0]
+    assert "toggle.dependsOnToggleId" in dependency_block
+    assert "const parent = toggleItem.parentElement;" in dependency_block
+    assert "parent.querySelector(`#${dependencyId}`)" in dependency_block
+    assert "document.getElementById(dependencyId)" in dependency_block
+    assert "checkbox.disabled = !dependencyChecked;" in dependency_block
+    assert "aria-disabled" in dependency_block
+    assert "toggleItem.setAttribute('tabIndex', dependencyChecked ? '0' : '-1');" in dependency_block
+    assert "toggleItem.style.opacity = dependencyChecked ? '1' : '0.5';" in dependency_block
+    assert "const cursor = dependencyChecked ? 'pointer' : 'default';" in dependency_block
+    assert "[toggleItem, indicator, label].forEach(el => { el.style.cursor = cursor; });" in dependency_block
+    assert "if (typeof toggleItem._nekoUpdateSettingsToggleStyle === 'function')" in source
+    assert "toggleItem._nekoUpdateSettingsToggleStyle();" in source
+    assert "const refreshDependentToggles = () => {" in source
+    assert "candidate._nekoUpdateSettingsToggleStyle();" in source
+
+    cat_audio_change_block = source.split("} else if (toggle.id === 'cat-audio')", 1)[1].split(
+        "}",
+        1,
+    )[0]
+    assert "window.nekoIdleCatAudio.setEnabled(isChecked)" in cat_audio_change_block
+
+    en_locale = json.loads((STATIC_LOCALES_DIR / "en.json").read_text(encoding="utf-8"))
+    ja_locale = json.loads((STATIC_LOCALES_DIR / "ja.json").read_text(encoding="utf-8"))
+    ko_locale = json.loads((STATIC_LOCALES_DIR / "ko.json").read_text(encoding="utf-8"))
+    ru_locale = json.loads((STATIC_LOCALES_DIR / "ru.json").read_text(encoding="utf-8"))
+    zh_cn_locale = json.loads((STATIC_LOCALES_DIR / "zh-CN.json").read_text(encoding="utf-8"))
+    zh_tw_locale = json.loads((STATIC_LOCALES_DIR / "zh-TW.json").read_text(encoding="utf-8"))
+
+    assert en_locale["settings"]["toggles"]["catAudio"] == "Cat Audio"
+    assert "Volume" not in en_locale["settings"]["toggles"]["catAudio"]
+    assert "音量" not in ja_locale["settings"]["toggles"]["catAudio"]
+    assert "볼륨" not in ko_locale["settings"]["toggles"]["catAudio"]
+    assert "Громкость" not in ru_locale["settings"]["toggles"]["catAudio"]
+    assert zh_cn_locale["settings"]["toggles"]["catAudio"] == "猫猫音效"
+    assert zh_tw_locale["settings"]["toggles"]["catAudio"] == "貓貓音效"
 
 
 def test_index_game_window_state_pauses_hidden_avatar_rendering():
