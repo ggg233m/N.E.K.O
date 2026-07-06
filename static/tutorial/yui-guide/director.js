@@ -4911,6 +4911,10 @@
             }
         }
 
+        getGuideScreenCoordinateBounds(metrics) {
+            return metrics && (metrics.bounds || metrics.contentBounds) || null;
+        }
+
         screenPointToLocalPoint(point) {
             if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                 return null;
@@ -4930,7 +4934,7 @@
                     y: localPoint.y
                 };
             }
-            let bounds = metrics && (metrics.contentBounds || metrics.bounds);
+            let bounds = this.getGuideScreenCoordinateBounds(metrics);
             if (!bounds) {
                 bounds = {
                     x: Number.isFinite(window.screenX) ? window.screenX : 0,
@@ -4962,7 +4966,7 @@
                     y: Number(screenBounds.y || 0) + virtualPoint.y
                 };
             }
-            let bounds = metrics && (metrics.contentBounds || metrics.bounds);
+            let bounds = this.getGuideScreenCoordinateBounds(metrics);
             if (!bounds) {
                 bounds = {
                     x: Number.isFinite(window.screenX) ? window.screenX : 0,
