@@ -3880,6 +3880,8 @@
         "minimize": "Minimizar",
         "close": "Fechar",
         "loading": "Carregando...",
+        "initializing": "Inicializando jukebox...",
+        "initializeFailed": "Falha ao inicializar jukebox",
         "ready": "Preparar",
         "playing": "Tocando agora: {{name}} - {{artist}}",
         "error": "Erro: {{message}}",
