@@ -28,7 +28,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from main_routers import characters_router
+# Patch the cards submodule, not the package facade: after the #2148 split
+# the handler resolves these names from cards.py's module globals, and the
+# facade's re-exports are snapshots that patching would not rebind.
+from main_routers.characters_router import cards as characters_router
 
 
 XOR_KEY = b"NEKOCHARA2024"
