@@ -1308,6 +1308,7 @@ function createAnimationSettingsSidePanel(manager, prefix) {
     });
 
     // 全屏/局部跟踪复选框（右半部分）
+    const supportsTrackingModeToggle = prefix === 'live2d' || prefix === 'vrm' || prefix === 'mmd';
     const modeCheckbox = document.createElement('input');
     modeCheckbox.type = 'checkbox';
     modeCheckbox.style.display = 'none';
@@ -1316,6 +1317,7 @@ function createAnimationSettingsSidePanel(manager, prefix) {
     Object.assign(modeIndicator.style, { width: '20px', height: '20px', flexShrink: '0' });
 
     const updateTrackingModeToggleState = () => {
+        if (!modeClickArea || !supportsTrackingModeToggle) return;
         const isEnabled = checkbox.checked;
         modeClickArea.style.opacity = isEnabled ? '1' : '0.4';
         modeClickArea.style.pointerEvents = isEnabled ? 'auto' : 'none';
@@ -1400,7 +1402,9 @@ function createAnimationSettingsSidePanel(manager, prefix) {
     });
 
     trackingRow.appendChild(trackingClickArea);
-    trackingRow.appendChild(modeClickArea);
+    if (supportsTrackingModeToggle) {
+        trackingRow.appendChild(modeClickArea);
+    }
     container.appendChild(trackingRow);
 
     // ── 取消隐藏（锁定悬停淡化）开关 ──
