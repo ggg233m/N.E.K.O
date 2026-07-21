@@ -3774,7 +3774,6 @@
             }
         });
 
-        // 图片文件拖到聊天框时按「导入图片」处理，避免浏览器默认打开本地文件。
         document.addEventListener('dragover', function (e) {
             if (!shouldHandleChatFileDrop(e)) return;
             e.preventDefault();
@@ -3784,7 +3783,7 @@
             }
         }, true);
 
-        document.addEventListener('drop', function (e) {
+        document.addEventListener('drop', async function (e) {
             if (!shouldHandleChatFileDrop(e)) return;
             e.preventDefault();
             e.stopPropagation();
@@ -3793,7 +3792,37 @@
                 return;
             }
             var files = getFilesFromDataTransfer(e.dataTransfer);
-            mod.importImageFilesToPendingList(files, { logPrefix: '[拖放图片]' });
+            var imageFiles = [];
+            var otherFiles = [];
+            files.forEach(function (f) {
+                if (f instanceof File && isLikelyImageFile(f)) {
+                    imageFiles.push(f);
+                } else {
+                    otherFiles.push(f);
+                }
+            });
+            if (imageFiles.length > 0) {
+                mod.importImageFilesToPendingList(imageFiles, { logPrefix: '[拖放图片]' });
+            }
+            if (otherFiles.length > 0) {
+                try {
+                    var parser = window.NekoAvatarDropParser;
+                    if (parser && typeof parser.parseFiles === 'function') {
+                        var result = await parser.parseFiles(otherFiles);
+                        var accepted = result && Array.isArray(result.accepted) ? result.accepted : [];
+                        var rejected = result && Array.isArray(result.rejected) ? result.rejected : [];
+                        if (accepted.length > 0 || rejected.length > 0) {
+                            await mod.sendAvatarDropPayload({
+                                items: accepted,
+                                targetType: 'chat',
+                                rejected: rejected
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.warn('[ChatDrop] non-image file parse failed:', error && error.message ? error.message : error);
+                }
+            }
         }, true);
 
         mod.ensureImportImageInput();
