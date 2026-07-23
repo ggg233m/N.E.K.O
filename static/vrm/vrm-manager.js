@@ -669,7 +669,7 @@ class VRMManager {
         // 先退出空闲低频 tick 模式（不复跑 rAF，下面自建新链），避免双驱动
         this._exitIdleTickMode(false);
         if (this._animationFrameId) cancelAnimationFrame(this._animationFrameId);
-        this._lastRenderTime = 0;
+        this._nextRenderTime = 0;
 
         // 帧体：rAF 驱动与空闲低频 interval 共用（interval 直接调用本函数，
         // 定时器周期即节流器，不经过 rAF 驱动里的 targetFrameRate 跳帧）
@@ -798,6 +798,22 @@ class VRMManager {
             if (this.renderer && this.scene && this.camera) {
                 this.renderer.render(this.scene, this.camera);
             }
+
+            // 10. VMC Protocol 采样钩子（默认禁用，使用独立 /api/vmc/ws）
+            // window.vrmVmcSender 由 vrm-vmc-sender.js 注入；当后端未启用时
+            // sample() 第一行 early-return，对渲染管线无可观测影响。
+            // 启用后按 sendRateHz（默认 60Hz）节流，经独立 /api/vmc/ws
+            // 推送到后端 main_logic.vmc_sender.send_frame → OSC over UDP。
+            if (window.vrmVmcSender && this.currentModel && this.currentModel.vrm) {
+                try {
+                    window.vrmVmcSender.sample(this.currentModel.vrm, delta);
+                } catch (e) {
+                    // VMC 采样异常绝不能影响渲染循环。首次失败后降级：清空
+                    // 引用避免每帧重试都抛异常污染控制台。
+                    console.warn('[VRM Manager] VMC sample failed, detaching hook:', e);
+                    window.vrmVmcSender = null;
+                }
+            }
         };
         this._renderFrame = renderFrame;
 
@@ -813,14 +829,20 @@ class VRMManager {
 
             this._animationFrameId = requestAnimationFrame(animateLoop);
 
-            // 帧率限制：根据 targetFrameRate 跳帧（0 = 不限帧，跟随 VSync）
+            // 帧率限制：使用累计目标时间，避免 144Hz 等非整数倍刷新率下
+            // 每次命中后从“当前时刻”重置而长期退化成 48fps。
             const now = performance.now();
             const targetFps = typeof window.targetFrameRate === 'number' ? window.targetFrameRate : 60;
             if (targetFps > 0) {
                 const frameInterval = 1000 / targetFps;
-                if (now - this._lastRenderTime < frameInterval * 0.9) return;
+                if (this._nextRenderTime <= 0 || now - this._nextRenderTime > frameInterval * 4) {
+                    this._nextRenderTime = now;
+                }
+                if (now < this._nextRenderTime) return;
+                this._nextRenderTime += frameInterval;
+            } else {
+                this._nextRenderTime = 0;
             }
-            this._lastRenderTime = now;
             renderFrame(now);
         };
         this._rafDriver = animateLoop;
@@ -873,7 +895,7 @@ class VRMManager {
         }
         if (restartRaf && this.renderer && this.scene && this.camera &&
             !this._animationFrameId && this._rafDriver) {
-            this._lastRenderTime = 0;
+            this._nextRenderTime = 0;
             this._animationFrameId = requestAnimationFrame(this._rafDriver);
         }
     }
@@ -1629,6 +1651,21 @@ class VRMManager {
      */
     async dispose() {
         console.log('[VRM Manager] 开始完整清理 VRM 资源...');
+        // Release the process-wide VMC publisher lease before tearing down
+        // the model. This also removes vrm-vmc-sender.js' strong reference to
+        // the VRM so switching to Live2D/MMD cannot retain a disposed model.
+        const vmcVrm = this.currentModel?.vrm;
+        if (
+            vmcVrm
+            && window.vrmVmcSender
+            && typeof window.vrmVmcSender.releaseVrm === 'function'
+        ) {
+            try {
+                window.vrmVmcSender.releaseVrm(vmcVrm);
+            } catch (error) {
+                console.warn('[VRM Manager] VMC source release failed:', error);
+            }
+        }
         this._isDisposed = true;
 
         // 使在途的 loadModel 失效：bump token 后，被取代的旧 load 的 core.loadModel
